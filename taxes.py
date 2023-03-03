@@ -1,7 +1,149 @@
-import numpy as np
 
+def tax(salary, maritalStatus, resState="Alaska", workState="Alaska", federalDeductions=0, stateDeductions=0, federalCredits=0, stateCredits=0, longTermCapitalGains=0, shortTermCapitalGains=0, capitalLosses=0, dependents=0, resCounty=None, age=0):
+    # TODO implememnt the following
+    resCounty = False
+    stateCredits = 0
+    dependents = 0 
+    # Up to $3000 from capital losses
+    # maxCapitalLosses = 0
+
+    # TODO No contribution restrictions if no employer sponsered retirement plan
+    # ALL OF THE FOLLOWING IS UPDATED FOR THE 2023 TAX YEAR
+    '''
+    STANDARD DEDUCTIONS (UNDER AGE 65) -> https://www.irs.gov/newsroom/irs-provides-tax-inflation-adjustments-for-tax-year-2023
+    MARRIED FILING JOINTLY -> $27,700
+    HEAD OF HOUSEHOLD -> $20,800
+    SINGLE OR MARRIED FILING SEPERATELY -> $13,850
+
+    FOR THOSE AGE 65 AND OLDER -> https://www.irs.gov/pub/irs-pdf/p501.pdf
+    TABLE 7 
+    MARRIED FILING JOINTLY -> $30,700
+    Head of Household -> $23,000
+    SINGLE OR MARRIED FILING SEPERATELY -> $15,700
+
+    FICA TAX RATES -> https://www.ssa.gov/oact/cola/cbb.html
+    SOCIAL SECURITY -> 6.2% up to $160,200
+    MEDICARE -> 1.45%
+
+    ADDITIONAL .9% MEDICARE TAX THRESHOLDS -> https://www.irs.gov/taxtopics/tc560#:~:text=A%200.9%25%20Additional%20Medicare%20Tax,%24200%2C000%20for%20all%20other%20taxpayers.
+    MARRIED FILING JOINTLY -> $200,000
+    MARRIED FILING SEPERATELY -> $125,000
+    ALL OTHERS -> $200,000
+    '''
+
+    if maritalStatus == "Married":
+        if federalDeductions == 0:
+            if age < 65:
+                federalDeductions = 27700
+            else:
+                federalDeductions = 30700
+        upperRoth, lowerRoth, upperTradIra, lowerTradIra, medicareThreshold = 228000, 218000, 136000, 116000, 250000
+    else:
+        if federalDeductions == 0:
+            if maritalStatus == "Single":
+                if age < 65:
+                    federalDeductions = 13850
+                else:
+                    federalDeductions = 15700
+            # Head of household standard deduction
+            else:
+                if age < 65:
+                    federalDeductions = 20800
+                else:
+                    federalDeductions = 23000
+        upperRoth, lowerRoth, upperTradIra, lowerTradIra, medicareThreshold = 153000, 138000, 83000, 73000, 200000
+        if maritalStatus == "Married Filing Separately":
+            medicareThreshold = 125000
+   
+    # Social Security Tax is set to the max ($160,200 * 6.2% ) and then reduced if lower than the max
+    socialSecurityTax = 9932.4
+    # The following are for the additional medicare tax for high earners
+    if salary < medicareThreshold:
+        if salary < 160200:
+            socialSecurityTax = salary * .062
+        medicareTax = salary * .0145
+    else:
+        medicareTax = (medicareThreshold - salary) * .0145 + (salary - medicareThreshold) * .009
+    # AGI is used as an argument for federal and state functions
+    agi = salary - federalDeductions
+
+    # First calculates federal income taxes since this information is used for some state taxes as a deduction
+    federalTaxes, federalBracket, federalMargin = federalIncomeTaxes(agi, maritalStatus)
+    
+    # Determines the jurisdictions in which state taxes are paid, 17 states only look at the state of residence, while
+    # the others have you pay the total amount of whichever state is higher
+    resState, workState = statereciprocity(resState, workState)
+    # If different, then the higher tax is used per the tax standard of paying the lower amount plus the difference
+    if resState != workState:
+        resStateTaxes, resStateBracket, resStateMargin = statetaxes(resState, resCounty, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents)
+        # The second case is for the workState
+        stateTaxes, stateBracket, stateMargin = statetaxes(workState, resCounty, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents)
+        # If resState is greater than the state amount used is the resState, so stateTaxes is updated
+        if resStateTaxes > stateTaxes:
+            stateTaxes, stateBracket, stateMargin = resStateTaxes, resStateBracket, resStateMargin
+            # TODO: Sets it to the workstate for margin purposes, could possibly switch back?
+            resState = workState
+    # If the previous condition wasn't met, the individual works and resides in the same state
+    else:
+         stateTaxes, stateBracket, stateMargin = statetaxes(resState, resCounty, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents)
+    # Local bracket included in stateTaxes and hence stateBracket, does not include Social Secuirty and Medicare taxes as those are witheld from salary
+    # TODO: PV of annuitized payments, or a quarterly tax discount form investing before paying quarterly taxes
+    # fedAndStateTaxes = (federalTaxes + stateTaxes) * (4 / (((1 + apyTod) ** 4 - 1) / (apyTod ** .25)))
+    fedAndStateTaxes = federalTaxes + stateTaxes
+    # Receives credits on Jan 1st (filing as soon as possible),
+    payAfterTaxes = salary - socialSecurityTax - medicareTax - fedAndStateTaxes + federalCredits + stateCredits
+    bracket = np.array([1 - (federalBracket + stateBracket)])
+    return payAfterTaxes, federalTaxes, stateTaxes, bracket, federalMargin, stateMargin, resState, workState, socialSecurityTax, medicareTax, fedAndStateTaxes, savings
+
+# Calculates the taxable portion of social security benefits, income everything other than Roth
+def ssitaxes(ssi, agi, firstThreshold, secondThreshold):
+    taxableSsi = .5 * ssi + agi
+
+    # If taxable ssi is less than the first threshold, it is not taxed
+    if taxableSsi <= firstThreshold:
+        taxableSsi = 0
+    # OTherwise, we must perform additional calculations to determine the taxable amount
+    else:  
+        secondTaxableSsi = taxableSsi - firstThreshold - secondThreshold
+        
+        # .5 * ssi + agi - firstThreshold >= 2 * secondThreshold
+        if secondTaxableSsi >= secondThreshold:
+            thirdTaxableSsi = secondThreshold
+
+        else:
+            # .5 * ssi + agi - firstThreshold - 2 * secondThreshold < 0
+            if secondTaxableSsi < 0:
+                secondTaxableSsi = 0
+                # thirdTaxableSsi = .5 * ssi + agi - firstThreshold
+                thirdTaxableSsi = taxableSsi - firstThreshold
+
+            else:
+                # thirdTaxableSsi = .5 * ssi + agi - firstThreshold - secondThreshold 
+                thirdTaxableSsi = taxableSsi - firstThreshold - secondTaxableSsi
+        
+        thirdTaxableSsi *= .5
+
+        if secondTaxableSsi >= taxableSsi:
+            secondTaxableSsi = taxableSsi
+        
+        if thirdTaxableSsi <= 0:
+            thirdTaxableSsi = 0
+        
+        if secondTaxableSsi * .85 + thirdTaxableSsi <= ssi * .85:
+            taxableSsi = secondTaxableSsi * .85 + thirdTaxableSsi
+        
+        # Maximum taxable amount is 85% of benefits
+        else:
+            taxableSsi = ssi * .85
+
+    return taxableSsi
+
+
+
+# ENTIRE TAX BOUND ARRAYS ARE USED FOR TRADITIONAL 401(K) AND IRA WITHDRAWALS
 def taxBounds(maritalStatus):
-    # TODO: Currently 2023 TAX YEAR
+    import numpy as np
+    # 2023 TAX YEAR
     brackets = np.array([0, .1, .12, .22, .24, .32, .35, .37])
     thresholds = {"Married":np.array([0, 22000, 89450, 190750, 364200, 462500, 693750, float('inf')]),
                   "Single": np.array([0, 11000, 44725, 95375, 182100, 231250, 578125, float('inf')]),
@@ -17,7 +159,7 @@ def federalIncomeTaxes(agi, maritalStatus):
     for i in range(1, 8):
         bracket = brackets[i]
         if agi < thresholds[i]:
-            # In this case the margin is changed, otherwise the user cant go to a lower tax bracket
+            # In these cases the margin is changed, otherwise the user cant go to a lower tax bracket
             if i >= 2:
                 margin = agi - thresholds[i-1]
                 taxes += margin * bracket
@@ -30,17 +172,132 @@ def federalIncomeTaxes(agi, maritalStatus):
             taxes += (thresholds[i] - thresholds[i-1]) * brackets[i]
     return taxes, bracket, margin
 
+'''
+Only applies to TOD
+
+Capital Gains -> https://www.irs.gov/taxtopics/tc409
+Rate      Married Filing Jointly    Single                    Head of Household 
+0%        Up to $83,350             Up to $41,675             Up to $55,800
+15%       $83,350 - $517,200        $41,675 - $459,750        $55,800 - $488,500
+20%       In excess of $517,200     In excess of $459,750     In excess of $488,500
+
+Net Investment Income Tax (NIIT) -> https://www.irs.gov/taxtopics/tc559
+3.8% additional tax on net investment income for taxpayers with modified adjusted gross income (MAGI) above the following thresholds:
+            Married Filing Jointly     Single or Head of Household     Married Filing Separately
+Thresholds  $250,000                   $200,000                        $125,000
+'''
+
+# !Calc long term probabilities of being in various thresholds
+def investmenttaxes(agi, longCapitalGains, shortCapitalGains, maritalStatus, state):
+    import numpy as np
+    taxes, niitTax, margin = 0, .038, 9999999
+    niitThresholds = {'Married': 250000, 'Head of Household': 200000, 'Single': 200000, 'Married Filing Separately': 125000}
+    highestGainsThresholds = {'Married': 517200, 'Head of Household': 488500, 'Single': 459750}
+    lowestGainsThresholds = {'Married': 83350, 'Head of Household': 55800, 'Single': 41675}
+
+    investmentBounds = np.array([lowestGainsThresholds[maritalStatus], niitThresholds[maritalStatus], highestGainsThresholds[maritalStatus], float('inf')])
+    investmentBrackets = np.array([0, .15, .188, .238])
+
+    # Incorporate short TERM capital gains
+    # first checks niit threshold
+    if agi + longCapitalGains > niitThresholds[maritalStatus]:
+        # then checks capital gains threshold
+        if longCapitalGains > highestGainsThresholds[maritalStatus]:
+            # next check if only investment income or the difference is taxable for niit
+            if agi > niitThresholds[maritalStatus]:
+                # 3.8% of the total plus capital gains rate plus capital gains brackets
+                margin = agi - niitThresholds[maritalStatus]
+                taxes = niitTax * longCapitalGains + (highestGainsThresholds[maritalStatus] - lowestGainsThresholds[maritalStatus] * .15) + margin * .2
+            else:
+                taxes = ((longCapitalGains + agi - niitThresholds[maritalStatus]) * niitTax) + (longCapitalGains * .2)
+        elif longCapitalGains > lowestGainsThresholds[maritalStatus]:
+            if agi > niitThresholds[maritalStatus]:
+                # 15% + 3.8% for this case
+                taxes = niitTax * longCapitalGains + (agi - niitThresholds[maritalStatus])
+            else:
+                taxes = ((longCapitalGains + agi - niitThresholds[maritalStatus]) * niitTax) + (longCapitalGains * .15)
+        else:
+            if agi > niitThresholds[maritalStatus]:
+                # only niit tax for this case
+                taxes = niitTax * longCapitalGains
+            else:
+                taxes = ((longCapitalGains + agi - niitThresholds[maritalStatus]) * niitTax)
+    # No NIIT in this case
+    else:
+        # No taxes if this condition is not met
+        if longCapitalGains > lowestGainsThresholds[maritalStatus]:
+            margin = longCapitalGains - lowestGainsThresholds[maritalStatus]
+            taxes = margin * .15
+
+    magi = agi
+    # TODO Would it be best to execute this code before stateTaxes?
+    # Fix Kansas
+    # Massachusetts taxes long term gains as income and has a higher tax for short term capital gains
+    if state == ('Alabama' or 'Arizona' or 'California' or 'Colorado' or 'Delaware' or 'Georgia' or 'Idaho' or
+                 'Illinois' or 'Indiana' or 'Iowa' or 'Kansas' or 'Kentucky' or 'Louisiana' or 'Maine' or 'Maryland' or
+                 ('Massachusetts' and longCapitalGains) or 'Michigan' or 'Minnesota' or 'Mississippi' or 'Missouri' or
+                 'Montana' or 'Nebraska' or 'New Jersey' or 'New York' or 'New Mexico' or 'North Carolina' or
+                 'North Dakota' or 'Ohio' or 'Oklahoma' or 'Oregon' or 'Pennsylvania' or 'Rhode Island' or 'Utah' or
+                 'Virginia' or 'West Virginia' or 'Wisconsin' or 'District of Columbia'):
+        if state == 'Massachusetts':
+            magi = agi + longCapitalGains
+        elif state == 'Montana':
+            # 2% credit for capital gains taxes
+            taxes -= (shortCapitalGains + longCapitalGains) * .02
+        elif state == 'New Mexico':
+            # All gains are deducted
+            if shortCapitalGains + longCapitalGains < 1000:
+                magi = agi
+            # $1000 is deducted in this case
+            elif shortCapitalGains + longCapitalGains < 2500:
+                magi = shortCapitalGains + longCapitalGains - 1000
+            # 40% of the gains are deducted
+            elif shortCapitalGains + longCapitalGains > 2500:
+                magi = agi + ((shortCapitalGains + longCapitalGains) * .6)
+        elif state == 'North Dakota':
+            # 40% of the gains are deducted
+            magi = agi + ((shortCapitalGains + longCapitalGains) * .6)
+        elif state == 'South Carolina':
+            # 44% of long term gains are deducted
+            magi = agi + shortCapitalGains + (longCapitalGains * .56)
+        elif state == 'Wisconsin':
+            # 30% of long term gains are deducted
+            magi = agi + shortCapitalGains + (longCapitalGains * .7)
+        else:
+            magi = agi + longCapitalGains + shortCapitalGains
+        taxes, stateBracket, localBracket, margin = statetaxes(state, 'NULL', magi, maritalStatus, 0.00001, 0.00001, 0.0001, 0)
+    elif state == ('Arkansas' or 'Connecticut'or'Hawaii'or('Massachusetts'and shortCapitalGains)or'Vermont'):
+        if state == 'Massachusetts':
+            taxes += stateCapitalGains(shortCapitalGains, maritalStatus, state)
+        else:
+            taxes += stateCapitalGains(longCapitalGains+shortCapitalGains, maritalStatus, state)
+    return taxes, margin
+
+# For states who have a special capital gains tax separate from regular income taxes
+def stateCapitalGains(capitalGains, maritalStatus, state):
+    taxes = 0
+    # !kinda weird
+    if state == 'Arkansas':
+        print('weird')
+    elif state == 'Connecticut':
+        taxes = capitalGains * .07
+    elif state == 'Hawaii':
+        taxes = capitalGains * .0725
+    # ! who the fuck thought changing 1 year to 3 would be a good idea
+    elif state == 'Vermont':
+        'wack'
+    return taxes
 
 
 # These states do not impose income taxes: Alaska, Florida, Nevada, South Dakota, Tennessee, Texas, Washington, and Wyoming
-def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents, payPeriod=24):
+def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents, payPeriods=24):
     taxes = 0
     stateBracket = 0
     localBracket = 0
     margin = 999999
     # Alabama allows for federal deductions from state income tax !capital gains treated as income
     '''
-    STATE INCOME TAXES
+    ALABAMA INCOME TAXES
     https://www.revenue.alabama.gov/faqs/what-is-alabamas-individual-income-tax-rate/
     
     For single persons, heads of families, and married persons filing separate returns:
@@ -126,7 +383,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         taxes += localBracket * agi
     
     '''
-    STATE INCOME TAXES
+    ARIZONA INCOME TAXES
     https://azdor.gov/forms/individual/form-140-x-y-tables
 
     Single or Married Filing Separate
@@ -143,8 +400,6 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
 
     DEDUCTIONS
     https://azdor.gov/forms/individual/form-140-resident-personal-income-tax-form-calculating
-
-
     '''
     # $100 dependent credit
     elif state == "Arizona":
@@ -201,7 +456,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 stateBracket = 0.0259
                 taxes += agi * stateBracket
     '''
-    STATE INCOME TAXES
+    ARKANSAS INCOME TAXES
     https://www.arkansasedc.com/why-arkansas/business-climate/tax-structure/personal-income-tax
 
     PERSONAL INCOME TAX RATES FOR TAX YEAR BEGINNING JANUARY 1, 2022
@@ -213,8 +468,8 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     $23,600 - $84,500	4.9%
 
     Income Tax Rate for Individuals with a Net Income Greater Than $84,500	 
-    $0      - $4,300	    2.0%
-    $4,301  - $8,500	    4.0%
+    $0      - $4,300	2.0%
+    $4,301  - $8,500	4.0%
     $8,501+
     '''
     elif state == 'Arkansas':
@@ -256,7 +511,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             stateBracket = 0
 
     '''
-    STATE INCOME TAXES
+    CALIFORNIA INCOME TAXES
     https://www.ftb.ca.gov/forms/2022/2022-540-tax-rate-schedules.pdf
 
     SINGLE OR MARRIED FILING SEPARATELY
@@ -429,31 +684,25 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             else:
                 raise Exception('Marital Status not recognized')  
     '''
-    STATE INCOME TAX
+    COLORADO INCOME TAX
     https://leg.colorado.gov/agencies/legislative-council-staff/individual-income-tax%C2%A0
-    
-    4.55%
+    FLAT RATE -> 4.55%
 
     LOCAL INCOME TAXES
     https://www.auroragov.org/business_services/taxes/occupational_privilege_tax
-    Aurora
-    $2 per month
+    Aurora ->$2 per month
 
     https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Department-of-Finance/Our-Divisions/Treasury/Business-Tax-Information#:~:text=Occupational%20privilege%20tax,-%28show%20below%29&text=Each%20taxable%20employee%20is%20liable,month%20for%20each%20taxable%20employee.
-    Denver
-    $5.75 per month
+    Denver -> $5.75 per month
 
     https://www.glendale.co.us/355/Occupational-Privilege-Tax
-    Glendale
-    $5 per month    
+    Glendale -> $5 per month    
 
     https://www.greenwoodvillage.com/1220/Occupational-Privilege-Tax-OPT
-    Greenwood Village
-    $2 per month
+    Greenwood Village -> $2 per month
     
     https://ci.sheridan.co.us/288/Occupational-Privilege-Tax
-    Sheridan 
-    $3 per month
+    Sheridan -> $3 per month
     '''
     elif state == 'Colorado':
         # if stateDeductions == 0:
@@ -476,7 +725,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             taxes += 36
     
     '''
-    STATE INCOME TAX
+    CONNECTICUT INCOME TAX
     https://www.cga.ct.gov/2022/rpt/pdf/2022-R-0108.pdf
 
     Connecticut Taxable Income
@@ -588,7 +837,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
 
     '''
     # !Several weird rules
-    elif state == 'Conecticut':
+    elif state == 'Connecticut':
         if maritalStatus == 'Married':
             if stateDeductions == 0:
                 stateDeductions = 15000
@@ -653,7 +902,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 taxes = agi * stateBracket
 
     ''' 
-    DELAWARE STATE INCOME TAXES
+    DELAWARE INCOME TAXES
     https://revenue.delaware.gov/software-developer/tax-rate-changes/
 
     Taxable income range	        Base	    Rate
@@ -724,7 +973,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             taxes += .0125 * agi
 
     '''
-    STATE INCOME TAXES
+    GEORGIA INCOME TAXES
     https://dor.georgia.gov/tax-tables-georgia-tax-rate-schedule
     
     Single
@@ -756,7 +1005,6 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     $2,500      $3,500          $55.00 Plus 4% of the amount over $2,500
     $3,500      $5,000          $95.00 Plus 5% of the amount over $3,500
     $5,000                      $170.00 Plus 5.75% of the amount over $5,000
-
 
     DEPENDENTS
     https://apps.dor.ga.gov/FillableForms/PDFViewer/Index?form=2022GA500
@@ -818,7 +1066,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 stateBracket = .01
                 taxes = agi * stateBracket
     '''
-    STATE INCOME TAXES
+    HAWAII INCOME TAXES
     https://tax.hawaii.gov/forms/d_18table-on/
     https://files.hawaii.gov/tax/forms/2018/18table-on.pdf (P. 14)
 
@@ -981,7 +1229,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 taxes = agi * stateBracket
 
     '''
-    STATE INCOME TAXES
+    IDAHO INCOME TAXES
     https://tax.idaho.gov/taxes/income-tax/individual-income/individual-income-tax-rate-schedule/
     Single
     At least	Less than	Tax	Rate
@@ -1062,7 +1310,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 taxes = agi * stateBracket
 
     '''
-    STATE INCOME TAXES
+    ILLINOIS INCOME TAXES
     https://tax.illinois.gov/research/taxrates/income.html#IndividualIncome
     4.95% on all income
 
@@ -1089,7 +1337,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         stateBracket = .0495
         taxes = agi * stateBracket
     '''
-    STATE INCOME TAXES
+    INDIANA INCOME TAXES
     https://www.in.gov/dor/tax-forms/2022-individual-income-tax-forms/ (IT-40PNR Booklet)
     3.23% on all income
     
@@ -1207,7 +1455,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         stateBracket += localBracket
 
     '''
-    STATE INCOME TAXES
+    IOWA INCOME TAXES
     https://tax.iowa.gov/2023-changes-iowa-individual-income-tax#:~:text=Individual%20Income%20Tax%20Rates%20(HF%202317)&text=Beginning%20in%20tax%20year%202026,who%20file%20a%20joint%20return.
     
     Income Tax Brackets	Rates (Brackets double for married filing jointly)
@@ -1602,7 +1850,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             taxes += agi * stateBracket
 
     '''
-    STATE INCOME TAX RATES
+    KENTUCKY INCOME TAX RATES
     https://revenue.ky.gov/News/Pages/DOR-Announces-Updates-to-Individual-Income-Tax-for-2023-Tax-Year.aspx
     https://revenue.ky.gov/Individual/Individual-Income-Tax/Pages/default.aspx
 
@@ -1628,7 +1876,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         taxes = agi * stateBracket
     
     '''
-    STATE INCOME TAX RATES
+    LOUISIANA INCOME TAX RATES
     https://revenue.louisiana.gov/individualincometax
     
     MARRIED FILING JOINTLY OR QUALIFYING SURVIVING SPOUSE
@@ -1685,7 +1933,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 taxes += agi * stateBracket
 
     '''
-    STATE INCOME TAX
+    MAINE INCOME TAXES
     https://www.maine.gov/revenue/tax-return-forms/individual-income-tax-2022
     https://www.maine.gov/revenue/sites/maine.gov.revenue/files/inline-files/ind_tax_rate_sched_2022.pdf
 
@@ -1778,7 +2026,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             raise Exception('Marital status not recognized')
     
     '''
-    STATE INCOME TAX
+    MARYLAND INCOME TAXES
     https://www.marylandtaxes.gov/individual/income/tax-info/tax-rates.php
     
     2022
@@ -1959,7 +2207,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         stateBracket += localBracket 
         #TODO Nonresidents	    	.0225
     '''
-    STATE INCOME TAX 
+    MASSACHUSETTS INCOME TAX 
     https://www.mass.gov/service-details/massachusetts-tax-rates
     5%
 
@@ -1999,7 +2247,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         taxes = agi * stateBracket
     
     '''
-    STATE INCOME TAXES
+    MICHIGAN INCOME TAXES
     https://www.michigan.gov/taxes/iit/new-developments-for-tax-year-2022
     
     4.25% tax rate
@@ -2010,9 +2258,10 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     $400 for qualified disabled veterans
     $5,000 for number of certificates of stillbirth from MDHHS
 
-    LOCAL INCOME TAXES
+    MICHIGAN INCOME TAXES
     https://www.michigan.gov/taxes/questions/iit/accordion/general/what-cities-impose-an-income-tax
 
+    NON-RESIDENT IS 50% OF THE FOLLOWING RESIDENT RATES
     Albion	          1%	
     Battle Creek	  1%	
     Benton Harbor     1%	
@@ -2076,11 +2325,13 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                             "Springfield":	      .01,
                             "Walker":	          .01}
         localBracket = michiganCounties[county]
+        if resState != 'Michigan':
+            localBracket *= .5
         taxes += agi * localBracket
         stateBracket += localBracket
     
     '''
-    STATE INCOME TAXES
+    MINNESOTA INCOME TAXES
     https://www.revenue.state.mn.us/minnesota-income-tax-rates-and-brackets
 
     2023
@@ -2189,7 +2440,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 taxes += agi * stateBracket
     
     '''
-    STATE INCOME TAXES
+    MISSISSIPPI INCOME TAXES
     https://www.dor.ms.gov/individual/tax-rates
 
     0% on the first $5,000 of taxable income.​                                                                                                                                                                                                                                                                                                      
@@ -2234,7 +2485,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             taxes = margin * stateBracket
 
     '''
-    STATE INCOME TAXES
+    MISSOURI INCOME TAXES
     https://dor.mo.gov/taxation/individual/tax-types/income/year-changes/
     If the Missouri taxable income is   The tax is
     $0 to $111	                        $0
@@ -2395,23 +2646,8 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             else:
                 stateBracket = .0246
                 taxes += agi * stateBracket
-    # !Only interest and dividend income
-    # elif state == 'New Hampshire':
-    #     # ! $1000-1500 dependent deduction
-    #     if maritalStatus == 'Married':
-    #         if stateDeductions == 0:
-    #             stateDeductions = 4800
-    #         agi -= stateDeductions
-    #     else:
-    #         if stateDeductions == 0:
-    #             stateDeductions = 2400
-    #         agi -= stateDeductions
-    #     stateBracket = .05
-    #     taxes = agi * stateBracket
-    #
-
     '''
-    STATE INCOME TAXES
+    NEW JERSEY INCOME TAXES
     https://www.state.nj.us/treasury/taxation/taxtables.shtml
 
     SINGLE OR MARRIED FILING SEPARATELY
@@ -2522,7 +2758,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 stateBracket = .014
                 taxes += agi * stateBracket
     '''
-    STATE INCOME TAXES
+    NEW MEXICO INCOME TAXES
     https://klvg4oyd4j.execute-api.us-west-2.amazonaws.com/prod/PublicFiles/34821a9573ca43e7b06dfad20f5183fd/fdf3c548-8aba-4b9c-9eb4-bb564c716015/FYI-104.pdf
 
     SINGLE
@@ -2597,7 +2833,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     # !Tax benefit recapture  
     # !ignoring MTA and NY-NJ waterfront
     '''
-    STATE INCOME TAXES
+    NEW YORK INCOME TAXES
     https://www.tax.ny.gov/forms/html-instructions/2022/it/it201i-2022.htm#nys-tax-rate-schedule
 
     Married filing jointly or qualifying surviving spouse
@@ -2855,7 +3091,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             if localMargin < margin:
                 margin = localMargin
     '''
-    STATE INCOME TAXES
+    NORTH CAROLINA INCOME TAXES
     https://www.ncdor.gov/taxes-forms/tax-rate-schedules
 
     2022 -> 4.99%
@@ -2885,7 +3121,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         stateBracket = .0499
         taxes = agi * stateBracket
     '''
-    STATE INCOME TAXES
+    NORTH DAKOTA INCOME TAXES
     https://www.tax.nd.gov/forms
 
     https://www.tax.nd.gov/sites/www/files/documents/forms/2022-individual-income-tax-booklet.pdf
@@ -2951,7 +3187,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 taxes = agi * stateBracket
     # !Special margin 
     '''
-    STATE INCOME TAX RATES
+    OHIO INCOME TAX RATES
     https://tax.ohio.gov/individual/resources/annual-tax-rates
     For taxable years beginning in 2022:
         Ohio Taxable Income	  Tax Calculation
@@ -3854,7 +4090,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         stateTaxes += localBracket * agi
         stateBracket += localBracket
     '''
-    STATE INCOME TAXES
+    OKLAHOMA INCOME TAXES
     TODO where to get state tax brackets?
     https://oklahoma.gov/content/dam/ok/en/tax/documents/forms/individuals/current/511-NR-Pkt.pdf
     '''
@@ -3916,7 +4152,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 taxes = agi * stateBracket
            
     '''
-        STATE INCOME TAXES
+        OREGON INCOME TAXES
         https://www.oregon.gov/dor/programs/individuals/Pages/PIT.aspx
 
         -FULL YEAR RESIDENTS
@@ -3982,11 +4218,87 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             else:
                 stateBracket = .0475
                 taxes += agi * stateBracket
-    elif state == 'Pennsylvania':
-        taxes = agi * .0307
     
     '''
-    STATE INCOME TAXES
+    PENNSYLVANIA INCOME TAXES
+    https://www.revenue.pa.gov/Tax%20Rates/Pages/default.aspx
+
+    LOCAL TAXES
+    https://www.nfc.usda.gov/Publications/HR_Payroll/Taxes/Bulletins/2022/TAXES-22-25.htm
+        
+    City                    Resident Percentage     Nonresident Percentage
+    Bethlehem               1.0000                  1.0000
+    Bradford                1.0000                  1.0000
+    Caln Township           1.0000                  1.0000
+    Camp Hill               2.0000                  1.0000
+    Carlisle                1.6000                  1.0000
+    Erie                    1.6500                  1.6500
+    Fairview Township       1.0000                  1.0000
+    Greene Township         1.7000                  1.0000
+    Gregg Township          1.8000                  1.0000
+    Hanover                 1.0000                  1.0000
+    Harrisburg              2.0000                  1.0000
+    Horsham Township        1.0000                  1.0000
+    Kelly Township          2.0000                  1.0000
+    Lancaster               1.1000                  1.0000
+    Monroeville             1.5000                  1.0000
+    Philadelphia            3.7900                  3.4400
+    Pittsburgh              3.0000                  1.0000
+    Plains Township         1.000                   1.0000
+    Reading                 3.6000                  1.0000
+    Scranton                3.4000                  1.0000
+    South Lebanon Township  1.0000                  0.0000
+    South Park Township     1.0000                  1.0000
+    Susquehanna Township    1.0000                  1.0000
+    Tinicum Township        1.0000                  1.0000
+    Tredyffrin Township     0.0000                  0.0000
+    Warminster Township     1.0000                  1.0000
+    Wilkes-Barre            3.0000                  1.0000
+    York Township           1.0000                  1.0000
+
+
+    '''
+    elif state == 'Pennsylvania':
+        stateBracket = .0307
+        taxes = agi * stateBracket
+        pennsylvania = {
+                        "Bethlehem": [1.0000, 1.0000],
+                        "Bradford": [1.0000, 1.0000],
+                        "Caln Township": [1.0000, 1.0000],
+                        "Camp Hill": [2.0000, 1.0000],
+                        "Carlisle": [1.6000, 1.0000],
+                        "Erie": [1.6500, 1.6500],
+                        "Fairview Township": [1.0000, 1.0000],
+                        "Greene Township": [1.7000, 1.0000],
+                        "Gregg Township": [1.8000, 1.0000],
+                        "Hanover": [1.0000, 1.0000],
+                        "Harrisburg": [2.0000, 1.0000],
+                        "Horsham Township": [1.0000, 1.0000],
+                        "Kelly Township": [2.0000, 1.0000],
+                        "Lancaster": [1.1000, 1.0000],
+                        "Monroeville": [1.5000, 1.0000],
+                        "Philadelphia": [3.7900, 3.4400],
+                        "Pittsburgh": [3.0000,1.0000],
+                        "Plains Township": [1.000, 1.0000],
+                        "Reading": [3.6000, 1.0000],
+                        "Scranton": [3.4000, 1.0000],
+                        "South Lebanon Township": [1.0000, 0.0000],
+                        "South Park Township": [1.0000, 1.0000],
+                        "Susquehanna Township": [1.0000, 1.0000],
+                        "Tinicum Township": [1.0000, 1.0000],
+                        "Tredyffrin Township": [0.0000, 0.0000],
+                        "Warminster Township": [1.0000, 1.0000],
+                        "Wilkes-Barre": [3.0000, 1.0000],
+                        "York Township": [1.0000, 1.0000]
+                    }
+        if resState == 'Pennsylvania':
+            localBracket = pennsylvania[county][0]
+        elif workState == 'Pennsylvania':
+            localBracket = pennsylvania[county][1]
+        stateBracket += localBracket
+        taxes += agi * localBracket
+    '''
+    RHODE ISLAND INCOME TAXES
     TODO FIX THIS 
     http://webserver.rilin.state.ri.us/Statutes/title44/44-30/44-30-12.HTM
     
@@ -4015,7 +4327,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             stateBracket = .0375
             taxes = agi * stateBracket
     '''
-    STATE INCOME TAXES
+    SOUTH CAROLINA INCOME TAXES
     https://dor.sc.gov/resources-site/lawandpolicy/Advisory%20Opinions/IL22-15.pdf
     For the 2022 tax year the new tax brackets, indexed for inflation, and tax computations for each bracket are:
     New Tax Brackets for Tax Year 2022      Bracket Amounts for Tax Year 2022       Compute the tax as follows for each bracket amount
@@ -4078,7 +4390,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         taxes += agi * stateBracket
     # !margin with special condition
     '''
-    STATE INCOME TAXES
+    VERMONT INCOME TAXES
     https://tax.vermont.gov/individuals/personal-income-tax/rates
     
     Rate Schedule for Tax Year 2022
@@ -4138,10 +4450,10 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             taxes = .03 * agi
 
     '''
-    STATE INCOME TAXES
+    VIRGINIA INCOME TAXES
     TODO where are they?
 
-    STATE STANDARD DEDUCTION
+    STANDARD DEDUCTION
     https://www.tax.virginia.gov/sites/default/files/vatax-pdf/2022-760-instructions.pdf
     (P.1) Increase in Standard Deduction: New legislation enacted during the 2022 General Assembly session increases the standard deduction from $4,500 to $8,000 for single filers and from $9,000 to $16,000 for married f ilers filing jointly. 
     '''
@@ -4171,7 +4483,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             taxes = agi * stateBracket
 
     '''
-    STATE INCOME TAXES
+    WEST VIRGINIA INCOME TAXES
     https://tax.wv.gov/Individuals/Pages/Individuals.aspx
 
     2022 PUBLICATION
@@ -4193,9 +4505,6 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     $12,500     $20,000             $450.00 plus 4.5% of excess over $12,500
     $20,000     $30,000             $787.50 plus 6% of excess over $20,000
     $30,000                         $1,387.50 plus 6.5% of excess over $30,000
-
-
-    
     '''
     elif state == 'West Virginia':
         if stateDeductions == 0:
@@ -4226,18 +4535,18 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             stateBracket = .03
             taxes = agi * stateBracket
         if county == 'Charleston':
-            taxes += 6 * payPeriod
+            taxes += 6 * payPeriods
         elif county == 'Huntington':
-            taxes += 5 * payPeriod
+            taxes += 5 * payPeriods
         elif county == 'Parkersburg':
-            taxes += 5 * payPeriod
+            taxes += 5 * payPeriods
         elif county == 'Huntington':
-            taxes += 10 * payPeriod
+            taxes += 10 * payPeriods
         elif county == 'Weirton':
             taxes += 104
 
     '''
-    STATE INCOME TAXES
+    WISCONSIN INCOME TAXES
     https://www.revenue.wi.gov/Pages/FAQS/pcs-taxrates.aspx#tx1a
 
     For single taxpayers, taxpayers qualified to file as head of household, estates, and trusts with taxable income:
@@ -4303,6 +4612,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
                 stateBracket = .0354
                 taxes = agi * stateBracket
     '''
+    DISTRICT OF COLUMBIA INCOME TAXES
     https://otr.cfo.dc.gov/page/dc-individual-and-fiduciary-income-tax-rates
     Tax Rates: The tax rates for tax years beginning after 12/31/2021 are:
 
@@ -4314,7 +4624,6 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     Over $250,000 but not over $500,000	$19,650, plus 9.25% of the excess over $250,000.
     Over $500,000 but not over $1,000,000	$42,775, plus 9.75% of the excess above $500,000.
     Over $1,000,000	$91,525, plus 10.75% of the excess above $1,000,000.
-    
     '''
     elif state == 'District of Columbia':
         if maritalStatus == 'Married':
@@ -4353,3 +4662,57 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     # stateBracket includes localBracket
     stateBracket += localBracket
     return taxes, stateBracket, margin
+
+# Several states have agreements with other states in which if you work in the following states, you only
+# need to pay income taxes in your residence state and not in the state where you work
+# !check after local taxes to ensure local taxes are paid in both jurisdictions
+def statereciprocity(resState, workState):
+    if workState == 'Arizona':
+        if resState == ('California' or 'Indiana' or 'Oregon' or 'Virginia'):
+            workState = resState
+    elif workState == 'District of Columbia':
+        if resState != 'District of Columbia':
+            workState = resState
+    elif workState == 'Illinois':
+        if resState == ('Iowa' or 'Kentucky' or 'Michigan' or 'Wisconsin'):
+            workState = resState
+    elif workState == 'Indiana':
+        if resState == ('Ohio' or 'Kentucky' or 'Michigan' or 'Wisconsin' or 'Pennsylvania'):
+            workState = resState
+    elif workState == 'Iowa':
+        if resState == 'Illinois':
+            workState = resState
+    elif workState == 'Kentucky':
+        if resState == ('Ohio' or 'Illinois' or 'Michigan' or 'Wisconsin' or 'Pennsylvania' or 'Indiana' or 'West Virginia'):
+            workState = resState
+    elif workState == 'Maryland':
+        if resState == ('District of Columbia' or 'Virginia' or 'Pennsylvania' or 'West Virginia'):
+            workState = resState
+    elif workState == 'Michigan':
+        if resState == ('Illinois' or 'Indiana' or 'Ohio' or 'Kentucky' or 'Wisconsin'):
+            workState = resState
+    elif workState == 'Minnesota':
+        if resState == ('North Dakota' or 'Michigan'):
+            workState = resState
+    elif workState == 'New Jersey':
+        if resState == 'Pennsylvania':
+            workState = resState
+    elif workState == 'North Dakota':
+        if resState == ('Minnesota' or 'Montana'):
+            workState = resState
+    elif workState == 'Ohio':
+        if resState == ('Indiana' or 'Kentucky' or 'Michigan' or 'West Virginia' or 'Pennsylvania'):
+            workState = resState
+    elif workState == 'Pennsylvania':
+        if resState == ('New Jersey' or 'Indiana' or 'Ohio' or 'Maryland' or 'West Virginia' or 'Kentucky'):
+            workState = resState
+    elif workState == 'Virginia':
+        if resState == ('District of Columbia' or 'Kentucky' or 'Maryland' or 'Pennsylvania' or 'West Virginia'):
+            workState = resState
+    elif workState == 'West Virgina':
+        if resState == ('Ohio' or 'Kentucky' or 'Maryland' or 'Virginia' or 'Pennsylvania'):
+            workState = resState
+    elif workState == 'Wisconsin':
+        if resState == ('Illinois' or 'Indiana' or 'Kentucky' or 'Michigan'):
+            workState = resState
+    return resState, workState
