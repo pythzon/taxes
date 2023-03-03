@@ -1,16 +1,15 @@
 
 def tax(salary, maritalStatus, resState="Alaska", workState="Alaska", federalDeductions=0, stateDeductions=0, federalCredits=0, stateCredits=0, longTermCapitalGains=0, shortTermCapitalGains=0, capitalLosses=0, dependents=0, resCounty=None, age=0):
+    import numpy as np
     # TODO implememnt the following
     resCounty = False
     stateCredits = 0
     dependents = 0 
     # Up to $3000 from capital losses
     # maxCapitalLosses = 0
-
-    # TODO No contribution restrictions if no employer sponsered retirement plan
-    # ALL OF THE FOLLOWING IS UPDATED FOR THE 2023 TAX YEAR
     '''
-    STANDARD DEDUCTIONS (UNDER AGE 65) -> https://www.irs.gov/newsroom/irs-provides-tax-inflation-adjustments-for-tax-year-2023
+    ALL OF THE FOLLOWING IS UPDATED FOR THE 2023 TAX YEAR
+    STANDARD DEDUCTIONS FOR THOSE UNDER AGE 65 -> https://www.irs.gov/newsroom/irs-provides-tax-inflation-adjustments-for-tax-year-2023
     MARRIED FILING JOINTLY -> $27,700
     HEAD OF HOUSEHOLD -> $20,800
     SINGLE OR MARRIED FILING SEPERATELY -> $13,850
@@ -22,15 +21,14 @@ def tax(salary, maritalStatus, resState="Alaska", workState="Alaska", federalDed
     SINGLE OR MARRIED FILING SEPERATELY -> $15,700
 
     FICA TAX RATES -> https://www.ssa.gov/oact/cola/cbb.html
-    SOCIAL SECURITY -> 6.2% up to $160,200
-    MEDICARE -> 1.45%
+    SOCIAL SECURITY -> 6.2% of gross salary up to $160,200
+    MEDICARE -> 1.45% of gross salary 
 
     ADDITIONAL .9% MEDICARE TAX THRESHOLDS -> https://www.irs.gov/taxtopics/tc560#:~:text=A%200.9%25%20Additional%20Medicare%20Tax,%24200%2C000%20for%20all%20other%20taxpayers.
     MARRIED FILING JOINTLY -> $200,000
     MARRIED FILING SEPERATELY -> $125,000
     ALL OTHERS -> $200,000
     '''
-
     if maritalStatus == "Married":
         if federalDeductions == 0:
             if age < 65:
@@ -102,25 +100,18 @@ def ssitaxes(ssi, agi, firstThreshold, secondThreshold):
     # If taxable ssi is less than the first threshold, it is not taxed
     if taxableSsi <= firstThreshold:
         taxableSsi = 0
-    # OTherwise, we must perform additional calculations to determine the taxable amount
+    # Otherwise, we must perform additional calculations to determine the taxable amount
     else:  
         secondTaxableSsi = taxableSsi - firstThreshold - secondThreshold
-        
-        # .5 * ssi + agi - firstThreshold >= 2 * secondThreshold
         if secondTaxableSsi >= secondThreshold:
             thirdTaxableSsi = secondThreshold
-
         else:
-            # .5 * ssi + agi - firstThreshold - 2 * secondThreshold < 0
             if secondTaxableSsi < 0:
                 secondTaxableSsi = 0
-                # thirdTaxableSsi = .5 * ssi + agi - firstThreshold
                 thirdTaxableSsi = taxableSsi - firstThreshold
 
             else:
-                # thirdTaxableSsi = .5 * ssi + agi - firstThreshold - secondThreshold 
                 thirdTaxableSsi = taxableSsi - firstThreshold - secondTaxableSsi
-        
         thirdTaxableSsi *= .5
 
         if secondTaxableSsi >= taxableSsi:
@@ -135,9 +126,7 @@ def ssitaxes(ssi, agi, firstThreshold, secondThreshold):
         # Maximum taxable amount is 85% of benefits
         else:
             taxableSsi = ssi * .85
-
     return taxableSsi
-
 
 
 # ENTIRE TAX BOUND ARRAYS ARE USED FOR TRADITIONAL 401(K) AND IRA WITHDRAWALS
@@ -283,9 +272,8 @@ def stateCapitalGains(capitalGains, maritalStatus, state):
         taxes = capitalGains * .07
     elif state == 'Hawaii':
         taxes = capitalGains * .0725
-    # ! who the fuck thought changing 1 year to 3 would be a good idea
     elif state == 'Vermont':
-        'wack'
+        '1-3 years for long term capital gains!?'
     return taxes
 
 
