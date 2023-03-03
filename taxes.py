@@ -1,5 +1,38 @@
-# These states do not impose income taxes: Alaska, Florida, Nevada, South Dakota, Tennessee, Texas, Washington, and Wyoming
+import numpy as np
 
+def taxBounds(maritalStatus):
+    # TODO: Currently 2023 TAX YEAR
+    brackets = np.array([0, .1, .12, .22, .24, .32, .35, .37])
+    thresholds = {"Married":np.array([0, 22000, 89450, 190750, 364200, 462500, 693750, float('inf')]),
+                  "Single": np.array([0, 11000, 44725, 95375, 182100, 231250, 578125, float('inf')]),
+                  "Head of Household": np.array([0, 15700, 59850, 95350, 182100, 231250, 578100, float('inf')])}
+    return thresholds[maritalStatus], brackets
+
+# Calculates AGI to determine taxes and tax bracket initially and for subsequent calculations
+def federalIncomeTaxes(agi, maritalStatus):
+    #Margin set to a high number so it doesnt affect the lowest earners who can't cross tax brackets
+    margin = 999999
+    thresholds, brackets = taxBounds(maritalStatus)
+    taxes = 0
+    for i in range(1, 8):
+        bracket = brackets[i]
+        if agi < thresholds[i]:
+            # In this case the margin is changed, otherwise the user cant go to a lower tax bracket
+            if i >= 2:
+                margin = agi - thresholds[i-1]
+                taxes += margin * bracket
+            # In inital case, the margin is unchanged and agi is used to calculate taxes
+            # TODO: Verify change
+            else:
+                taxes += agi * bracket
+            return taxes, bracket, margin
+        else:
+            taxes += (thresholds[i] - thresholds[i-1]) * brackets[i]
+    return taxes, bracket, margin
+
+
+
+# These states do not impose income taxes: Alaska, Florida, Nevada, South Dakota, Tennessee, Texas, Washington, and Wyoming
 def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents, payPeriod=24):
     taxes = 0
     stateBracket = 0
