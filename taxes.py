@@ -229,11 +229,19 @@ def investmenttaxes(agi, longCapitalGains, shortCapitalGains, maritalStatus, sta
                  'Montana' or 'Nebraska' or 'New Jersey' or 'New York' or 'New Mexico' or 'North Carolina' or
                  'North Dakota' or 'Ohio' or 'Oklahoma' or 'Oregon' or 'Pennsylvania' or 'Rhode Island' or 'Utah' or
                  'Virginia' or 'West Virginia' or 'Wisconsin' or 'District of Columbia'):
+        
+        ''' MASSACHUSETTS CAPITAL GAINS TAXES
+            https://www.mass.gov/service-details/massachusetts-tax-rates
+            LONG-TERM -> 5%
+            SHORT-TERM -> 12%    
+        '''
         if state == 'Massachusetts':
             magi = agi + longCapitalGains
-        elif state == 'Montana':
-            # 2% credit for capital gains taxes
-            taxes -= (shortCapitalGains + longCapitalGains) * .02
+        '''
+        NEW MEXICO CAPITAL GAINS TAXES
+        https://klvg4oyd4j.execute-api.us-west-2.amazonaws.com/prod/PublicFiles/34821a9573ca43e7b06dfad20f5183fd/1afc56af-ea90-4d48-82e5-1f9aeb43255a/PITbook2022.pdf
+        The first $1,000 of net capital gains are deducted or the greater of 40% of net capital gains are deducted
+        '''
         elif state == 'New Mexico':
             # All gains are deducted
             if shortCapitalGains + longCapitalGains < 1000:
@@ -244,13 +252,34 @@ def investmenttaxes(agi, longCapitalGains, shortCapitalGains, maritalStatus, sta
             # 40% of the gains are deducted
             elif shortCapitalGains + longCapitalGains > 2500:
                 magi = agi + ((shortCapitalGains + longCapitalGains) * .6)
+        
+        '''
+            NORTH DAKOTA CAPITAL GAINS TAXES
+            https://www.tax.nd.gov/news/tax-legislative-changes/significant-changes-law/individual-income-tax-history
+            
+            40% of the long-term gains are deducted
+        '''        
         elif state == 'North Dakota':
-            # 40% of the gains are deducted
-            magi = agi + ((shortCapitalGains + longCapitalGains) * .6)
+            magi = agi + shortCapitalGains + (longCapitalGains * .6)
+        '''
+            SOUTH CAROLINA CAPITAL GAINS TAXES
+            https://www.scstatehouse.gov/code/t12c006.php
+            
+            44% of net capital gains are deducted (SECTION 12-6-1150)
+        '''
         elif state == 'South Carolina':
-            # 44% of long term gains are deducted
-            magi = agi + shortCapitalGains + (longCapitalGains * .56)
-        elif state == 'Wisconsin':
+            magi = agi + (shortCapitalGains + longCapitalGains) * .56
+        '''
+            WISCNSIN CAPITAL GAINS TAXES 
+            https://www.revenue.wi.gov/DOR%20Publications/pb103.pdf   
+            
+            30% of long term gains are deducted, but all gains are treated as ordinary income (P. 4)
+        '''
+         ''' MONTANA CAPITAL GAINS TAXES
+             https://mtrevenue.gov/2021/11/29/simplification-of-montana-income-taxation/?utm_source=rss&utm_medium=rss&utm_campaign=simplification-of-montana-income-taxation
+             Same policy as Wisconsin
+        '''
+        elif state == 'Wisconsin' or state == 'Montana':
             # 30% of long term gains are deducted
             magi = agi + shortCapitalGains + (longCapitalGains * .7)
         else:
@@ -266,16 +295,197 @@ def investmenttaxes(agi, longCapitalGains, shortCapitalGains, maritalStatus, sta
 # For states who have a special capital gains tax separate from regular income taxes
 def stateCapitalGains(capitalGains, maritalStatus, state):
     taxes = 0
-    # !kinda weird
+    '''
+    ARAKANSAS CAPITAL GAINS TAXES
+    https://www.arkansasedc.com/why-arkansas/business-climate/tax-structure/capital-gains-tax-reduction
+    50% of net capital gains are deducted, as is any net capital gain in excess of $10M
+    '''
     if state == 'Arkansas':
-        print('weird')
+        if shortCapitalGains + longCapitalGains > 10000000:
+            capitalGains = 10000000
+        else:
+            capitalGains = shortCapitalGains + longCapitalGains
+        taxes = capitalGains* .5
+    
+    '''
+    CONNECTICUT CAPITAL GAINS TAXES
+    https://portal.ct.gov/DRS/Publications/TSSNs/TSSN-29#:~:text=An%20individual's%20net%20capital%20gains,portion%20of%20Social%20Security%20benefits.
+    Net capital gains are taxed at a rate of 7%
+
+    Dividends and interest income are treated as ordinary income
+    '''
     elif state == 'Connecticut':
         taxes = capitalGains * .07
+    '''
+    HAWAII CAPITAL GAINS TAXES
+    Fluid situation, but it's currenlty 7.25% for now. The following testimony discusses a proposal to increase it to 9%
+
+    https://www.grassrootinstitute.org/2023/02/hb337-increasing-tax-on-capital-gains-a-bad-risk/
+    Current Rate: 7.25%
+    Proposed Rate: 9%
+    '''
     elif state == 'Hawaii':
         taxes = capitalGains * .0725
+    '''
+    VERMONT CAPITAL GAINS TAXES
+    https://tax.vermont.gov/individuals/personal-income-tax/taxable-income
+    40% of long capital gains of assets held for more than 3 years up to $350,000 in deductions
+    '''
     elif state == 'Vermont':
-        '1-3 years for long term capital gains!?'
+        if capitalGains > 875000:
+            agi -= 350000
+        else:
+            agi -= capitalGains * .4
+    '''
+    WASHINGTON CAPITAL GAINS TAXES
+    https://dor.wa.gov/taxes-rates/other-taxes/capital-gains-tax
+    7% of long capital gains over $250,000
+    Short term capital gains are taxed as ordinary income
+    '''
+    elif state == 'Washington':
+        if longCapitalGains > 250000:
+            taxes = (longCapitalGains - 250000) * .07
+
     return taxes
+
+# Several states have agreements with other states in which if you work in the following states, you only
+# need to pay income taxes in your residence state and not in the state where you work
+# !check after local taxes to ensure local taxes are paid in both jurisdictions
+def statereciprocity(resState, workState):
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://azdor.gov/businesses-arizona/withholding-tax/withholding-exceptions
+    '''
+    if workState == 'Arizona':
+        if resState == ('California' or 'Indiana' or 'Oregon' or 'Virginia'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://otr.cfo.dc.gov/page/individual-income-special-circumstances-faqs
+    Only D.C. residents pay D.C. taxes
+    '''
+    elif workState == 'District of Columbia':
+        if resState != 'District of Columbia':
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://tax.illinois.gov/questionsandanswers/12.html
+    The agreement with Indiana was recenetly rescinded
+    '''
+    elif workState == 'Illinois':
+        if resState == ('Iowa' or 'Kentucky' or 'Michigan' or 'Wisconsin'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.in.gov/dor/files/ib28.pdf
+    The following 5 states have reciprocity agreements with Indiana
+    '''
+    elif workState == 'Indiana':
+        if resState == ('Ohio' or 'Kentucky' or 'Michigan' or 'Wisconsin' or 'Pennsylvania'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://tax.iowa.gov/iowa-illinois-reciprocal-agreement
+    '''
+    elif workState == 'Iowa':
+        if resState == 'Illinois':
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://revenue.ky.gov/DOR%20Training%20Materials/103%20KAR%2017.140.%20Individual%20income%20tax%20-%20reciprocity%20-%20nonresidents.pdf
+    The following 7 states have reciprocity agreements with Indiana
+    '''
+    elif workState == 'Kentucky':
+        if resState == ('Ohio' or 'Illinois' or 'Michigan' or 'Wisconsin' or 'Pennsylvania' or 'Indiana' or 'West Virginia'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.marylandtaxes.gov/forms/Tax_Publications/Administrative_Releases/Income_and_Estate_Tax_Releases/ar_it37.pdf
+    VI. Recpirocal Agreement -> Maryland has reciprocal agreements with the following 4 states:
+    '''
+    elif workState == 'Maryland':
+        if resState == ('District of Columbia' or 'Virginia' or 'Pennsylvania' or 'West Virginia'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.michigan.gov/taxes/questions/iit/accordion/residency/are-my-wages-earned-in-another-state-taxable-in-michigan-if-i-am-a-michigan-resident-1
+    The following 6 states have reciprocity agreements with Michigan
+    '''
+    elif workState == 'Michigan':
+        if resState == ('Illinois' or 'Indiana' or 'Kentucky' or 'Minnesota' or 'Ohio' or 'Wisconsin'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://mn.gov/mmb/assets/mwr_form_tcm1059-128581.pdf
+    The following 2 states have reciprocity agreements with Minnesota
+    '''
+    elif workState == 'Minnesota':
+        if resState == ('North Dakota' or 'Michigan'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://mtrevenue.gov/wp-content/uploads/2022/12/montana-employees-withholding-allowance-and-exemption-certificate-form-mw-4.pdf
+    Solely North Dakota
+    '''
+    elif workState == 'Montana':
+        if resState == 'North Dakota':
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.nj.gov/treasury/taxation/njit25.shtml
+    Solely Pennsylvania
+    '''
+    elif workState == 'New Jersey':
+        if resState == 'Pennsylvania':
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.tax.nd.gov/sites/www/files/documents/forms/business/ndwrfillable.pdf
+    '''
+    elif workState == 'North Dakota':
+        if resState == ('Minnesota' or 'Montana'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://tax.ohio.gov/static/forms/employer_withholding/generic/wth_it4nr.pdf
+    The following 5 states have reciprocity agreements with Ohio
+    '''
+    elif workState == 'Ohio':
+        if resState == ('Indiana' or 'Kentucky' or 'Michigan' or 'Pennsylvania' or 'West Virginia'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.revenue.pa.gov/FormsandPublications/FormsforBusinesses/EmployerWithholding/Documents/rev-419.pdf
+    The following 5 states have reciprocity agreements with Pennsylvania
+    '''
+    elif workState == 'Pennsylvania':
+        if resState == ('Indiana' or 'New Jersey' or 'Maryland' or 'Ohio' or 'West Virginia'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.tax.virginia.gov/reciprocity
+    The following 5 states have reciprocity agreements with Virginia
+    '''
+    elif workState == 'Virginia':
+        if resState == ('District of Columbia' or 'Kentucky' or 'Maryland' or 'Pennsylvania' or 'West Virginia'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://tax.wv.gov/Documents/TSD/tsd438.pdf
+    The following 5 states have reciprocity agreements with West Virginia
+    '''
+    elif workState == 'West Virgina':
+        if resState == ('Kentucky' or 'Maryland' or  'Ohio' or 'Pennsylvania' or 'Virginia'):
+            workState = resState
+    '''
+    RECIRPOCAL AGREEMENTS
+    https://www.revenue.wi.gov/Pages/FAQS/pcs-work.aspx
+    The following 4 states have reciprocity agreements with Wisconsin
+    '''           
+    elif workState == 'Wisconsin':
+        if resState == ('Illinois' or 'Indiana' or 'Kentucky' or 'Michigan'):
+            workState = resState
+    return resState, workState
 
 
 # These states do not impose income taxes: Alaska, Florida, Nevada, South Dakota, Tennessee, Texas, Washington, and Wyoming
@@ -418,7 +628,7 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
         localBracket = alabamaCounties[county]
         stateBracket += localBracket    
         taxes += localBracket * agi
-        
+
     '''
     ARIZONA INCOME TAXES
     https://azdor.gov/forms/individual/form-140-x-y-tables
@@ -4737,57 +4947,3 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
     # stateBracket includes localBracket
     stateBracket += localBracket
     return taxes, stateBracket, margin
-
-# Several states have agreements with other states in which if you work in the following states, you only
-# need to pay income taxes in your residence state and not in the state where you work
-# !check after local taxes to ensure local taxes are paid in both jurisdictions
-def statereciprocity(resState, workState):
-    if workState == 'Arizona':
-        if resState == ('California' or 'Indiana' or 'Oregon' or 'Virginia'):
-            workState = resState
-    elif workState == 'District of Columbia':
-        if resState != 'District of Columbia':
-            workState = resState
-    elif workState == 'Illinois':
-        if resState == ('Iowa' or 'Kentucky' or 'Michigan' or 'Wisconsin'):
-            workState = resState
-    elif workState == 'Indiana':
-        if resState == ('Ohio' or 'Kentucky' or 'Michigan' or 'Wisconsin' or 'Pennsylvania'):
-            workState = resState
-    elif workState == 'Iowa':
-        if resState == 'Illinois':
-            workState = resState
-    elif workState == 'Kentucky':
-        if resState == ('Ohio' or 'Illinois' or 'Michigan' or 'Wisconsin' or 'Pennsylvania' or 'Indiana' or 'West Virginia'):
-            workState = resState
-    elif workState == 'Maryland':
-        if resState == ('District of Columbia' or 'Virginia' or 'Pennsylvania' or 'West Virginia'):
-            workState = resState
-    elif workState == 'Michigan':
-        if resState == ('Illinois' or 'Indiana' or 'Ohio' or 'Kentucky' or 'Wisconsin'):
-            workState = resState
-    elif workState == 'Minnesota':
-        if resState == ('North Dakota' or 'Michigan'):
-            workState = resState
-    elif workState == 'New Jersey':
-        if resState == 'Pennsylvania':
-            workState = resState
-    elif workState == 'North Dakota':
-        if resState == ('Minnesota' or 'Montana'):
-            workState = resState
-    elif workState == 'Ohio':
-        if resState == ('Indiana' or 'Kentucky' or 'Michigan' or 'West Virginia' or 'Pennsylvania'):
-            workState = resState
-    elif workState == 'Pennsylvania':
-        if resState == ('New Jersey' or 'Indiana' or 'Ohio' or 'Maryland' or 'West Virginia' or 'Kentucky'):
-            workState = resState
-    elif workState == 'Virginia':
-        if resState == ('District of Columbia' or 'Kentucky' or 'Maryland' or 'Pennsylvania' or 'West Virginia'):
-            workState = resState
-    elif workState == 'West Virgina':
-        if resState == ('Ohio' or 'Kentucky' or 'Maryland' or 'Virginia' or 'Pennsylvania'):
-            workState = resState
-    elif workState == 'Wisconsin':
-        if resState == ('Illinois' or 'Indiana' or 'Kentucky' or 'Michigan'):
-            workState = resState
-    return resState, workState
