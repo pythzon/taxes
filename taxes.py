@@ -94,6 +94,7 @@ def tax(salary, maritalStatus, resState="Alaska", workState="Alaska", federalDed
     bracket = np.array([1 - (federalBracket + stateBracket)])
     return payAfterTaxes, federalTaxes, stateTaxes, bracket, federalMargin, stateMargin, resState, workState, socialSecurityTax, medicareTax, fedAndStateTaxes, savings
 
+# https://www.irs.gov/pub/irs-pdf/p915.pdf
 # Calculates the taxable portion of social security benefits, income everything other than Roth
 def ssitaxes(ssi, agi, firstThreshold, secondThreshold):
     taxableSsi = .5 * ssi + agi
