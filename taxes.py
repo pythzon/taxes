@@ -95,7 +95,7 @@ def tax(salary, maritalStatus, resState="Alaska", workState="Alaska", federalDed
     return payAfterTaxes, federalTaxes, stateTaxes, bracket, federalMargin, stateMargin, resState, workState, socialSecurityTax, medicareTax, fedAndStateTaxes, savings
 
 # https://www.irs.gov/pub/irs-pdf/p915.pdf
-# Calculates the taxable portion of social security benefits, income everything other than Roth
+#  Calculates the taxable portion of social security benefits, income everything other than Roth
 def ssitaxes(ssi, agi, firstThreshold, secondThreshold):
     taxableSsi = .5 * ssi + agi
 
@@ -254,12 +254,12 @@ def investmenttaxes(agi, longCapitalGains, shortCapitalGains, maritalStatus, sta
             elif shortCapitalGains + longCapitalGains > 2500:
                 magi = agi + ((shortCapitalGains + longCapitalGains) * .6)
         
-        '''
+            '''
             NORTH DAKOTA CAPITAL GAINS TAXES
             https://www.tax.nd.gov/news/tax-legislative-changes/significant-changes-law/individual-income-tax-history
             
             40% of the long-term gains are deducted
-        '''        
+            '''        
         elif state == 'North Dakota':
             magi = agi + shortCapitalGains + (longCapitalGains * .6)
         '''
@@ -489,7 +489,7 @@ def statereciprocity(resState, workState):
     return resState, workState
 
 
-# These states do not impose income taxes: Alaska, Florida, Nevada, South Dakota, Tennessee, Texas, Washington, and Wyoming
+# These states do not impose income taxes: Alaska, Florida, Nevada, New Hampshire (only interest and dividends),  South Dakota, Tennessee, Texas, Washington (only capital gains), and Wyoming
 def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents, payPeriods=24):
     taxes = 0
     stateBracket = 0
@@ -4832,71 +4832,160 @@ def statetaxes(state, county, agi, maritalStatus, federalTaxes, stateDeductions,
             taxes += 104
 
     '''
-    WISCONSIN INCOME TAXES
-    https://www.revenue.wi.gov/Pages/FAQS/pcs-taxrates.aspx#tx1a
+    WISCONSIN INCOME TAXES (2023)
+    https://www.revenue.wi.gov/TaxForms2023/2023-Form1-ES-Inst.pdf
 
-    For single taxpayers, taxpayers qualified to file as head of household, estates, and trusts with taxable income:
+    For single, head of household, estates, and trusts with taxable income:
     over	    but not over	2022 tax is 	    of the amount over
-    $0	        $12,760	        3.54%	            $0
-    $12,760     $25,520	        $451.70 + 4.65%	    $12,760
-    $25,520	    $280,950	    $1,045.04 + 5.3%	$25,520
-    $280,950                	$14,582.83 + 7.65%	$280,950
+    $0	        $13,810	        3.54%	            $0
+    $13,810     $27,630	        $451.70 + 4.65%	    $13,810
+    $27,630	    $304,170	    $1,045.04 + 5.3%	$27,630
+    $304,170                  	$14,582.83 + 7.65%	$304,170
 
     For married taxpayers filing a joint return with taxable income:
     over	    but not over	2022 tax is	        of the amount over
-    $0	        $17,010         3.54%	            $0
-    $17,010     $34,030         $602.15 + 4.65%	    $17,010
-    $34,030     $374,600        $1,393.58 + 5.3%	$34,030
-    $374,600                    $19,443.79 + 7.65%	$374,600
+    $0	        $18,420         3.54%	            $0
+    $18,420     $36,840         $602.15 + 4.65%	    $18,420
+    $36,840     $405,550        $1,393.58 + 5.3%	$36,840
+    $405,550                    $19,443.79 + 7.65%	$405,550
 
     For married taxpayers filing separate returns with taxable income:
-
     over	    but not over	2022 tax is	        of the amount over
-    $0	        $8,510          3.54%	            $0      
-    $8,510      $17,010         $301.25 + 4.65% 	$8,510
-    $17,010     $187,300	    $696.50 + 5.3%	    $17,010
-    $187,300                    $9,721.87 + 7.65%	$187,300
+    $0	        $9,210          3.54%	            $0      
+    $9,210      $18,420         $301.25 + 4.65% 	$9,210
+    $18,420     $187,300	    $696.50 + 5.3%	    $18,420
+    $202,780                    $9,721.87 + 7.65%	$202,780
+
+    WISCONSIN DEDUCTIONS
+    STANDARD DEDUCTION (2023)
+    Single
+    over        but not over    deduction
+    $0          $18,399 	    $12,760
+    $18,399     $124,733 	    $12,760 - 12% of the amount over $18,400
+    $124,733                    $0
+
+    Head of Household
+    over        but not over    deduction
+    $0          $18,399 	    $16,840
+    $18,399     $53,778 	    $16,840 - 22.515% of the amount over $18,400
+    $53,778     $124,733 	    $12,760 - 12% of the amount over $18,400
+    $124,733                    $0
+
+    Married Filing Jointly
+    over        but not over    deduction
+    $0          $26,549 	    $23,620
+    $26,549     $124,733 	    $23,620 - 19.778% of the amount over $26,550
+    $145,976                    $0
+
+    Married Filing Separately
+    over        but not over    deduction
+    $0          $12,599 	    $11,220
+    $12,599     $69,330 	    $11,220 - 19.778% of the amount over $12,600
+    $69,330                     $0
+
+    EXEMPTIONS (2023)
+    $700 for yourself, $700 for your spouse if filing a joint return, and $700 for each dependent.
+    Add $250 to the total if you are 65 years of age or over and, if filing a joint return, add
+    $250 if your spouse is 65 years of age or over. Exemptions must also be prorated using the
+    same ratio as standard deductions.
+
     '''
     elif state == 'Wisconsin':
-        # $4350 dependent deduction
         if maritalStatus == 'Married':
             if stateDeductions == 0:
-                stateDeductions = 21200 + (dependents * 4350)
+                exemptions = 1400 + (dependents * 700)
+                deductions = 23620
+                if agi > 145976:
+                    stateDeductions = 0
+                elif agi > 26549:
+                    stateDeductions = deduction - (agi - 26549) * .19778
+                else:
+                    stateDeductions = deduction
+                # Calculates prorated exemptions
+                stateDeductions += (stateDeductions / deduction) * exemptions
             agi -= stateDeductions
-            if agi > 355910:
+            if agi > 405550:
                 stateBracket = .0765
-                margin = agi - 355910
-                taxes = 20288.466 + margin * stateBracket
-            elif agi > 32330:
-                stateBracket = .0627
-                margin = agi - 32330
-                taxes = 1323.969 + margin * stateBracket
-            elif agi > 16160:
+                margin = agi - 405550
+                taxes = 19443.79 + margin * stateBracket
+            elif agi > 36840:
+                stateBracket = .053
+                margin = agi - 36840
+                taxes = 1393.58 + margin * stateBracket
+            elif agi > 18420:
                 stateBracket = .0465
-                margin = agi - 16160
-                taxes = 572.064 + margin * stateBracket
+                margin = agi - 18420
+                taxes = 602.15 + margin * stateBracket
             else:
                 stateBracket = .0354
                 taxes = agi * stateBracket
+        if maritalStatus == ('Single' or 'Head of Household'):
+            if stateDeductions == 0:
+                exemptions = 700 + (dependents * 700)
+                if maritalStatus == 'Single':
+                    deduction = 12760
+                    if agi > 124733:
+                        stateDeductions = 0
+                    elif agi > 18399:
+                        stateDeductions = deduction - (agi - 18399) * .12
+                    else:
+                        stateDeductions = deduction  
+                else:
+                    deduction = 16840
+                    if agi > 124733:
+                        stateDeductions = 0
+                    elif agi > 53778:
+                        stateDeductions = deduction - (agi - 53778) * .22515
+                    elif agi > 18399:
+                        stateDeductions = deduction - (agi - 18399) * .12
+                    else:
+                        stateDeductions = deduction  
+                stateDeductions = (stateDeductions / deduction) * exemptions
+            agi -= stateDeductions
+            if agi > 304170:
+                stateBracket = .0765
+                margin = agi - 304170
+                taxes = 14582.83 + margin * stateBracket
+            elif agi > 27630:
+                stateBracket = .053
+                margin = agi - 27630
+                taxes = 1045.04 + margin * stateBracket
+            elif agi > 13810:
+                stateBracket = .0465
+                margin = agi - 13810
+                taxes = 451.7 + margin * stateBracket
+            else:
+                stateBracket = .0354
+                taxes = agi * stateBracket
+        
+        # Married Filing Separately
         else:
             if stateDeductions == 0:
-                stateDeductions = 10600 + (dependents * 4350)
+                exemptions = 1400 + (dependents * 700)
+                deduction = 11220
+                if agi > 69330:
+                    stateDeductions = 0
+                elif agi > 12599:
+                    stateDeductions = deduction - (agi - 12599) * .19778
+                else:
+                    stateDeductions = deduction
+                stateDeductions += (stateDeductions / deduction) * exemptions
             agi -= stateDeductions
-            if agi > 266930:
+            if agi > 202780:
                 stateBracket = .0765
-                margin = agi - 266930
-                taxes = 16209.129 + margin * stateBracket
-            elif agi > 24250:
-                stateBracket = .0627
-                margin = agi - 24250
-                taxes = 993.093 + margin * stateBracket
-            elif agi > 12120:
+                margin = agi - 202780
+                taxes = 9721.87 + margin * stateBracket
+            elif agi > 18420:
+                stateBracket = .053
+                margin = agi - 18420
+                taxes = 696.5 + margin * stateBracket
+            elif agi > 9210:
                 stateBracket = .0465
-                margin = agi - 12120
-                taxes = 429.048 + margin * stateBracket
+                margin = agi - 9210
+                taxes = 301.25 + margin * stateBracket
             else:
                 stateBracket = .0354
-                taxes = agi * stateBracket
+                taxes = agi * stateBracket        
     '''
     DISTRICT OF COLUMBIA INCOME TAXES
     https://otr.cfo.dc.gov/page/dc-individual-and-fiduciary-income-tax-rates
