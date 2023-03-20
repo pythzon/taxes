@@ -1,0 +1,33 @@
+counties = ["Other",
+"Bethlehem",
+"Bradford",
+"Caln Township",
+"Camp Hill",
+"Carlisle",
+"Erie",
+"Fairview Township",
+"Greene Township",
+"Gregg Township",
+"Hanover",
+"Harrisburg",
+"Horsham Township",
+"Kelly Township",
+"Lancaster",
+"Monroeville",
+"Philadelphia",
+"Pittsburgh",
+"Plains Township",
+"Reading",
+"Scranton",
+"South Lebanon Township",
+"South Park Township",
+"Susquehanna Township",
+"Tinicum Township",
+"Tredyffrin Township",
+"Warminster Township",
+"Wilkes-Barre",
+"York Township"]
+
+with open('counties.txt', "w") as file:
+    for county in counties:
+        file.write("<option value='{0}'>{0}</option>\n".format(county))
