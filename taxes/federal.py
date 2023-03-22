@@ -1,3 +1,5 @@
+import numpy as np
+
 class Federal: 
     # def __init__(self, agi, dependents, maritalStatus, federalDeductions=0):
     #     self.agi = agi
@@ -32,14 +34,13 @@ class Federal:
         MARRIED FILING SEPERATELY -> $125,000
         ALL OTHERS -> $200,000
         '''
-        import numpy as np
-        # TODO implememnt the following
         resCounty = False
         stateCredits = 0
         dependents = 0 
         # Up to $3000 from capital losses
         # maxCapitalLosses = 0
 
+        # TODO possibly move into federal since these are federal deductions and social security and medicare are federal
         if maritalStatus == "Married":
             if federalDeductions == 0:
                 if age < 65:
@@ -66,48 +67,44 @@ class Federal:
 
         # Social Security Tax is set to the max ($160,200 * 6.2% ) and then reduced if lower than the max
         socialSecurityTax = 9932.4
-        # The following are for the additional medicare tax for high earners
+
+        # The following are for the additional medicare tax for high earners, as well as the standard medicare tax rate of 1.45%
         if salary < medicareThreshold:
             if salary < 160200:
                 socialSecurityTax = salary * .062
             medicareTax = salary * .0145
         else:
             medicareTax = (medicareThreshold - salary) * .0145 + (salary - medicareThreshold) * .009
-        # AGI is used as an argument for federal and state functions
-        agi = salary - federalDeductions
+    
+        # TODO
+        federalTaxes, federalBracket, federalMargin = federalIncomeTaxes()
 
-        # First calculates federal income taxes since this information is used for some state taxes as a deduction
-        federalTaxes, federalBracket, federalMargin = federalIncomeTaxes(agi, maritalStatus)
-
-        # Determines the jurisdictions in which state taxes are paid, 17 states only look at the state of residence, while
-        # the others have you pay the total amount of whichever state is higher
-        resState, workState = statereciprocity(resState, workState)
-        # If different, then the higher tax is used per the tax standard of paying the lower amount plus the difference
-        if resState != workState:
-            resStateTaxes, resStateBracket, resStateMargin = statetaxes(resState, resCounty, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents)
-            # The second case is for the workState
-            stateTaxes, stateBracket, stateMargin = statetaxes(workState, resCounty, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents)
-            # If resState is greater than the state amount used is the resState, so stateTaxes is updated
-            if resStateTaxes > stateTaxes:
-                stateTaxes, stateBracket, stateMargin = resStateTaxes, resStateBracket, resStateMargin
-                # TODO: Sets it to the workstate for margin purposes, could possibly switch back?
-                resState = workState
-        # If the previous condition wasn't met, the individual works and resides in the same state
-        else:
-                stateTaxes, stateBracket, stateMargin = statetaxes(resState, resCounty, agi, maritalStatus, federalTaxes, stateDeductions, stateCredits, dependents)
-        # Local bracket included in stateTaxes and hence stateBracket, does not include Social Secuirty and Medicare taxes as those are witheld from salary
-        # TODO: PV of annuitized payments, or a quarterly tax discount form investing before paying quarterly taxes
-        # fedAndStateTaxes = (federalTaxes + stateTaxes) * (4 / (((1 + apyTod) ** 4 - 1) / (apyTod ** .25)))
+        # TODO 
+        resState, workState = getStateTaxes()
+        
         fedAndStateTaxes = federalTaxes + stateTaxes
-        # Receives credits on Jan 1st (filing as soon as possible),
-        payAfterTaxes = salary - socialSecurityTax - medicareTax - fedAndStateTaxes + federalCredits + stateCredits
+        ficaTaxes = socialSecurityTax + medicareTax
+        totalTaxes = fedAndStateTaxes + ficaTaxes
+        payAfterTaxes = salary - totalTaxes
+
         bracket = np.array([1 - (federalBracket + stateBracket)])
         return payAfterTaxes, federalTaxes, stateTaxes, bracket, federalMargin, stateMargin, resState, workState, socialSecurityTax, medicareTax, fedAndStateTaxes, savings
 
     # ENTIRE TAX BOUND ARRAYS ARE USED FOR TRADITIONAL 401(K) AND IRA WITHDRAWALS
     def taxBounds(maritalStatus):
-        import numpy as np
-        # 2023 TAX YEAR
+        '''
+        https://www.irs.gov/newsroom/irs-provides-tax-inflation-adjustments-for-tax-year-2023
+        For tax year 2023, the top tax rate remains 37% for individual single taxpayers with incomes greater than $578,125 ($693,750 for married couples filing jointly).
+
+        The other rates are:
+        
+        35% for incomes over $231,250 ($462,500 for married couples filing jointly);
+        32% for incomes over $182,100 ($364,200 for married couples filing jointly);
+        24% for incomes over $95,375 ($190,750 for married couples filing jointly);
+        22% for incomes over $44,725 ($89,450 for married couples filing jointly);
+        12% for incomes over $11,000 ($22,000 for married couples filing jointly).
+        The lowest rate is 10% for incomes of single individuals with incomes of $11,000 or less ($22,000 for married couples filing jointly)
+        '''
         brackets = np.array([0, .1, .12, .22, .24, .32, .35, .37])
         thresholds = {"Married":np.array([0, 22000, 89450, 190750, 364200, 462500, 693750, float('inf')]),
                         "Single": np.array([0, 11000, 44725, 95375, 182100, 231250, 578125, float('inf')]),
@@ -127,8 +124,8 @@ class Federal:
                 if i >= 2:
                     margin = agi - thresholds[i-1]
                     taxes += margin * bracket
+                
                 # In inital case, the margin is unchanged and agi is used to calculate taxes
-                # TODO: Verify change
                 else:
                     taxes += agi * bracket
                 return taxes, bracket, margin
@@ -150,10 +147,8 @@ class Federal:
             Married Filing Jointly     Single or Head of Household     Married Filing Separately
     Thresholds  $250,000                   $200,000                        $125,000
     '''
-
-    # !Calc long term probabilities of being in various thresholds
+    # IGNORE THIS FOR NOW
     def investmenttaxes(agi, longCapitalGains, shortCapitalGains, maritalStatus, state):
-        import numpy as np
         taxes, niitTax, margin = 0, .038, 9999999
         niitThresholds = {'Married': 250000, 'Head of Household': 200000, 'Single': 200000, 'Married Filing Separately': 125000}
         highestGainsThresholds = {'Married': 517200, 'Head of Household': 488500, 'Single': 459750}
@@ -162,40 +157,63 @@ class Federal:
         investmentBounds = np.array([lowestGainsThresholds[maritalStatus], niitThresholds[maritalStatus], highestGainsThresholds[maritalStatus], float('inf')])
         investmentBrackets = np.array([0, .15, .188, .238])
 
-        # Incorporate short TERM capital gains
+        # incorporate short term capital gains which uses federal income tax
         # first checks niit threshold
         if agi + longCapitalGains > niitThresholds[maritalStatus]:
-            # then checks capital gains threshold
+            # MARGINAL TAX RATE IS NIIT TAX RATE
+            taxRate = niitTax
+
             if longCapitalGains > highestGainsThresholds[maritalStatus]:
-                # next check if only investment income or the difference is taxable for niit
                 if agi > niitThresholds[maritalStatus]:
+
                     # 3.8% of the total plus capital gains rate plus capital gains brackets
                     margin = agi - niitThresholds[maritalStatus]
                     taxes = niitTax * longCapitalGains + (highestGainsThresholds[maritalStatus] - lowestGainsThresholds[maritalStatus] * .15) + margin * .2
                 else:
                     taxes = ((longCapitalGains + agi - niitThresholds[maritalStatus]) * niitTax) + (longCapitalGains * .2)
+
             elif longCapitalGains > lowestGainsThresholds[maritalStatus]:
                 if agi > niitThresholds[maritalStatus]:
                     # 15% + 3.8% for this case
                     taxes = niitTax * longCapitalGains + (agi - niitThresholds[maritalStatus])
                 else:
                     taxes = ((longCapitalGains + agi - niitThresholds[maritalStatus]) * niitTax) + (longCapitalGains * .15)
+
             else:
                 if agi > niitThresholds[maritalStatus]:
                     # only niit tax for this case
                     taxes = niitTax * longCapitalGains
                 else:
                     taxes = ((longCapitalGains + agi - niitThresholds[maritalStatus]) * niitTax)
+        
         # No NIIT in this case
         else:
             # No taxes if this condition is not met
             if longCapitalGains > lowestGainsThresholds[maritalStatus]:
                 margin = longCapitalGains - lowestGainsThresholds[maritalStatus]
-                taxes = margin * .15
+                taxRate = .15
+                taxes = margin * taxRate
+        
+        return taxes, taxRate, margin
 
+    '''
+    Saver's Credit -> https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-savings-contributions-savers-credit
+    You're eligible for the credit if you're:
+    1.) Age 18 or older,
+    2.) Not claimed as a dependent on another person's return, and
+    3.) Not a student.
+
+    The maximum contribution amount that may qualify for the credit is $2,000 ($4,000 if married filing jointly), making the maximum credit $1,000 ($2,000 if married filing jointly).
+    
+    Credit Rate	                Married Filing Jointly	    Head of Household	        All Other Filers*
+    50% of your contribution	AGI not more than $43,500	AGI not more than $32,625	AGI not more than $21,750
+    20% of your contribution	$43,501- $47,500	        $32,626 - $35,625	        $21,751 - $23,750
+    10% of your contribution	$47,501 - $73,000	        $35,626 - $54,750	        $23,751 - $36,500
+    0% of your contribution	    more than $73,000	        more than $54,750	        more than $36,500
+    '''
+    
     # Contributions for all tax-advantaged accounts (401k, IRA). Checks if possible given maximum allocations
     def getSavers(agi, maritalStatus, maxContributions, contributions):
-        import numpy as np
         margin = 999999
         brackets = np.array([.1, .2, .5])
         # $4000 is max matched contributions and is used for married couples
@@ -240,27 +258,69 @@ class Federal:
 
         return saversBonus, thresholds
 
-    # Calculates current bonus amount and the distance to the bonus threshold
-    def getEic(agi, maritalStatus, dependents, maxContributions):
-        maxAgiMarried = [24210, 53120, 59478, 63698]
-        maxAgi = [17640, 46560, 52918, 56838]
-        credits = [600, 3995, 6604, 7430]
-        if dependents > 3:
-            dependents = 3
-        if maritalStatus == 'Married':
-            # Cannot be reached
-            if agi - maxContributions > maxAgiMarried[dependents]:
-                return 0, False
-            # Returns margin
-            elif agi > maxAgiMarried[dependents]:
-                return 0, agi - maxAgiMarried[dependents]
-        # Single or HoH for this case
-        else:
-            # Cannot be reached
-            if agi - maxContributions > maxAgi[dependents]:
-                return 0, False
-            # Returns margin
-            elif agi > maxAgi[dependents]:
-                return 0, agi - maxAgi[dependents]
-        # If none of the disqualifying conditions are met, the credit is given and never changes so margin is set to max
-        return credits[dependents], 999999
+
+    '''
+    Tax Year 2023
+    https://www.irs.gov/credits-deductions/individuals/earned-income-tax-credit-eitc
+ 
+    Find the maximum AGI, investment income and credit amounts for tax year 2023.
+
+    Children or             Filing as Single, Head of 
+    Relatives Claimed       Household, or Widowed           Filing as Married Filing Jointly
+    
+    Zero	                $17,640                         $24,210
+    
+    One	                    $46,560                         $53,120
+
+    Two	                    $52,918                         $59,478
+
+    Three	                $56,838                         $63,698
+
+    Investment income limit: $11,000 or less
+
+    Maximum Credit Amounts
+    The maximum amount of credit:
+
+    No qualifying children: $600
+    1 qualifying child: $3,995
+    2 qualifying children: $6,604
+    3 or more qualifying children: $7,430
+
+    https://www.irs.gov/pub/irs-pdf/p596.pdf
+    
+    
+    '''
+         
+def getEic(agi, dependents, maritalStatus):
+    if maritalStatus != 'Married Filing Jointly':
+        maritalStatus = 'Single'
+    
+    if dependents > 3:
+        dependents = 3
+
+    inflation = 1.0715
+    
+    # 2023 values
+    credits = [600, 3995, 6604, 7430]
+    thresholdMaxAgi = {'Married': [24210, 53120, 59478, 63698], 'Single': [17640, 46560, 52918, 56838]}
+
+    # 2022 
+    creditRate = {0: .03825, 1: .17, 2: .2, 3: .225}
+    thresholdMaxCredit = [7320, 10980, 15410, 15410] * inflation
+    phaseoutRate = {0: .03825, 1: .0799, 2: .1053, 3: .1053}
+    thresholdPhaseoutStart = {'Married': [15290, 26260, 26260, 26260], 'Single': [9160, 20130, 20130, 20130]} * inflation
+
+    # Retuns credit amount, credit rate, and downward distance between change in status (deductions reduce AGI, not vice verse )
+    if agi > thresholdMaxAgi[maritalStatus][dependents]:
+        return 0, 0, agi - thresholdMaxAgi[maritalStatus][dependents]
+    
+    elif agi < thresholdMaxCredit:
+        return credits[dependents] * creditRate[dependents], creditRate[dependents], 999999 # Never goes lower, set to high number
+    
+    elif agi < thresholdPhaseoutStart[maritalStatus][dependents]:
+        return thresholdMaxCredit, 0, agi - thresholdMaxCredit # in betwrrn max credit mimimum and maximum in this case
+    
+    else: # Phaseout applies
+        return thresholdMaxCredit - (agi - thresholdPhaseoutStart[maritalStatus][dependents]) * phaseoutRate[dependents], -phaseoutRate[dependents], agi - thresholdPhaseoutStart[maritalStatus][dependents]
+    
+            
